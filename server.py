@@ -10,6 +10,7 @@
 """
 import argparse
 import json
+import urllib.parse
 import os
 import sys
 import threading
@@ -50,6 +51,18 @@ class Handler(BaseHTTPRequestHandler):
                            "state": self.collector.state}
                 self._send(200, json.dumps(payload, ensure_ascii=False),
                            "application/json; charset=utf-8")
+            elif path == "/api/range":
+                q = urllib.parse.parse_qs(self.path.partition("?")[2])
+                frm = (q.get("from") or [""])[0].strip()
+                to = (q.get("to") or [""])[0].strip()
+                ok, msg = self.collector.start_range(frm, to)
+                self._send(200 if ok else 400,
+                           json.dumps({"ok": ok, "message": msg}, ensure_ascii=False),
+                           "application/json; charset=utf-8")
+            elif path == "/api/range/status":
+                self._send(200, json.dumps(self.collector.range_job,
+                                           ensure_ascii=False),
+                           "application/json; charset=utf-8")
             elif path == "/healthz":
                 st = self.collector.status
                 ok = st["error"] is None and self.collector.state is not None
@@ -76,13 +89,21 @@ def main():
     ap.add_argument("--bootstrap", type=int, default=45,
                     help="сколько минут истории поднять при старте")
     ap.add_argument("--workers", type=int, default=8)
-    ap.add_argument("--ceiling", type=float, default=685.0,
-                    help="ёмкость канала бакета в MiB/s — порог тревоги о насыщении")
+    ap.add_argument("--limit-mibs", type=float, default=640.0,
+                    help="квота полосы бакета в MiB/с (по умолчанию 640 = 5*2^30 бит/с)")
+    ap.add_argument("--max-range", type=int, default=360,
+                    help="максимальная длина разбираемого периода, мин (по умолчанию 360)")
+    ap.add_argument("--limit-combined", action="store_true",
+                    help="считать квоту общей на чтение+запись; "
+                         "по умолчанию она применяется к каждому направлению отдельно")
     args = ap.parse_args()
 
     col = Collector(window_min=args.window, interval=args.interval,
                     workers=args.workers, bootstrap_min=args.bootstrap,
-                    report_window=args.report_window, ceiling_mibs=args.ceiling)
+                    report_window=args.report_window,
+                    limit_mibs=args.limit_mibs,
+                    per_direction=not args.limit_combined,
+                    max_range_min=args.max_range)
     Handler.collector = col
 
     thread = threading.Thread(target=col.run_forever, daemon=True)
@@ -92,6 +113,7 @@ def main():
     shown = args.host if args.host != "0.0.0.0" else "<адрес машины>"
     print("дашборд:  http://%s:%d" % (shown, args.port))
     print("данные:   http://%s:%d/api/state" % (shown, args.port))
+    print("период:   http://%s:%d/api/range?from=ГГГГ-ММ-ДД+ЧЧ:ММ&to=..." % (shown, args.port))
     print("сбор идёт в фоне, период %d с, окно %d мин." % (args.interval, args.window))
     print("первый цикл поднимает %d мин истории — займёт несколько минут."
           % args.bootstrap)

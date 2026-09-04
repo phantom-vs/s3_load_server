@@ -55,6 +55,22 @@ h2{font-size:16px;font-weight:600;margin:0;letter-spacing:-.01em}
 .legend{display:flex;gap:14px;flex-wrap:wrap;align-items:center;font-size:12px;color:var(--ink-2)}
 .legend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:5px;vertical-align:-1px}
 .legend .dash{width:15px;height:0;border-top:2px dashed var(--alarm);border-radius:0}
+.ctl{gap:9px}
+.ctl-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.ctl-lbl{font-size:12.5px;color:var(--ink-2)}
+.ctl input{font-family:ui-monospace,Menlo,monospace;font-size:12.5px;padding:5px 8px;
+ border:1px solid var(--rule-strong);border-radius:3px;background:var(--surface-2);color:var(--ink)}
+.ctl button{font-size:12.5px;padding:5px 12px;border-radius:3px;cursor:pointer;
+ border:1px solid var(--read);background:var(--read);color:#fff;font-weight:500}
+.ctl button.ghost{background:transparent;color:var(--ink-2);border-color:var(--rule-strong);font-weight:400}
+.ctl button:disabled{opacity:.5;cursor:default}
+.ctl button:focus-visible,.ctl input:focus-visible{outline:2px solid var(--read);outline-offset:2px}
+.ctl .quick button{font-size:12px;padding:3px 9px}
+.ctl-note{font-size:12px;color:var(--ink-2);font-family:ui-monospace,Menlo,monospace}
+.ctl-note.err{color:var(--alarm)}
+.snapshot{background:var(--warn-tint);border:1px solid var(--warn);border-radius:3px;
+ padding:4px 10px;font-size:12px;color:var(--ink)}
+.selrect{fill:var(--read);opacity:.18}
 .chartbox{position:relative}
 svg{display:block;max-width:100%;height:auto}
 .tip{position:absolute;pointer-events:none;opacity:0;transition:opacity .1s;background:var(--ink);
@@ -86,6 +102,30 @@ tr:last-child td{border-bottom:none}
     <div class="meta" id="meta">подключение…</div>
   </div>
 
+  <div class="panel ctl">
+    <div class="ctl-row">
+      <span class="ctl-lbl">Период (UTC):</span>
+      <input id="from" type="text" placeholder="2026-09-03 23:22" size="17">
+      <span class="ctl-lbl">—</span>
+      <input id="to" type="text" placeholder="2026-09-04 01:16" size="17">
+      <button id="go">Показать</button>
+      <button id="live" class="ghost">Живой режим</button>
+      <span class="ctl-note" id="rstat"></span>
+    </div>
+    <div class="ctl-row quick">
+      <span class="ctl-lbl">Быстро:</span>
+      <button class="q ghost" data-min="15">15 мин</button>
+      <button class="q ghost" data-min="30">30 мин</button>
+      <button class="q ghost" data-min="60">1 час</button>
+      <button class="q ghost" data-min="180">3 часа</button>
+      <button class="q ghost" data-min="360">6 часов</button>
+      <span class="ctl-lbl" style="margin-left:8px">Сдвиг:</span>
+      <button id="prev" class="ghost" title="на окно назад">←</button>
+      <button id="next" class="ghost" title="на окно вперёд">→</button>
+      <span class="ctl-note">или выдели мышью на верхнем графике</span>
+    </div>
+  </div>
+
   <div class="banner ok" id="banner">
     <span class="icon" id="bicon">…</span>
     <div><div class="t" id="btitle">Ожидание первых данных</div>
@@ -99,7 +139,7 @@ tr:last-child td{border-bottom:none}
     <div class="legend">
       <span><i style="background:var(--read)"></i>Чтение</span>
       <span><i style="background:var(--write)"></i>Запись</span>
-      <span><i class="dash"></i>Полка чтения</span>
+      <span><i class="dash"></i>Квота полосы</span>
     </div>
     <div class="chartbox" id="cb1"><svg id="c1" viewBox="0 0 1100 260"></svg><div class="tip" id="t1"></div></div>
   </div>
@@ -142,7 +182,75 @@ const NS="http://www.w3.org/2000/svg";
 const el=(t,a)=>{const e=document.createElementNS(NS,t);for(const k in a)e.setAttribute(k,a[k]);return e;};
 const nf=n=>Number(n).toLocaleString("ru-RU");
 const W=1100, ML=58, MR=14;
-let LAST=null;
+let LAST=null, LIMIT=640, PERDIR=true;
+let MODE="live", POLL=null;
+
+function pad(n){return String(n).padStart(2,"0");}
+function utcStr(d){return d.getUTCFullYear()+"-"+pad(d.getUTCMonth()+1)+"-"+pad(d.getUTCDate())
+  +" "+pad(d.getUTCHours())+":"+pad(d.getUTCMinutes());}
+function setQuick(min){
+  const now=new Date(), from=new Date(now.getTime()-min*60000);
+  document.getElementById("from").value=utcStr(from);
+  document.getElementById("to").value=utcStr(now);
+}
+function rstat(msg,err){
+  const e=document.getElementById("rstat");
+  e.textContent=msg||""; e.className="ctl-note"+(err?" err":"");
+}
+function render(d){
+  LAST=d;
+  LIMIT=(d.limit_mibs===undefined||d.limit_mibs===null)?640:d.limit_mibs; PERDIR=d.per_direction !== false;
+  banner(d.alert); kpis(d.window,d.ceiling);
+  drawBandwidth(d.series,d.ceiling); drawLatency(d.latency_series); tables(d);
+}
+async function showRange(){
+  const f=document.getElementById("from").value.trim(), t=document.getElementById("to").value.trim();
+  if(!f||!t){rstat("укажите начало и конец",1);return;}
+  document.getElementById("go").disabled=true;
+  rstat("запуск…");
+  let r;
+  try{ r=await (await fetch(`/api/range?from=${encodeURIComponent(f)}&to=${encodeURIComponent(t)}`)).json(); }
+  catch(e){ rstat("сервер недоступен",1); document.getElementById("go").disabled=false; return; }
+  if(!r.ok){ rstat(r.message,1); document.getElementById("go").disabled=false; return; }
+  MODE="range";
+  if(POLL) clearInterval(POLL);
+  POLL=setInterval(async()=>{
+    let j;
+    try{ j=await (await fetch("/api/range/status")).json(); }catch(e){ return; }
+    if(j.phase==="готово"){
+      clearInterval(POLL); POLL=null;
+      document.getElementById("go").disabled=false;
+      rstat(`период ${j.from} — ${j.to} · ${j.files} файлов`);
+      render(j.state);
+    } else if(j.phase==="ошибка"){
+      clearInterval(POLL); POLL=null;
+      document.getElementById("go").disabled=false;
+      rstat("ошибка: "+(j.error||""),1); MODE="live";
+    } else {
+      rstat(`${j.phase} · ${j.hours_done}/${j.hours_total} ч · ${j.files} файлов`);
+    }
+  },2000);
+}
+function parseUTC(str){
+  const m=String(str).trim().match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})$/);
+  return m?Date.UTC(+m[1],+m[2]-1,+m[3],+m[4],+m[5]):null;
+}
+function shift(dir){
+  const f=parseUTC(document.getElementById("from").value),
+        t=parseUTC(document.getElementById("to").value);
+  if(f===null||t===null||t<=f){rstat("сначала задайте корректный период",1);return;}
+  const span=t-f;
+  document.getElementById("from").value=utcStr(new Date(f+dir*span));
+  document.getElementById("to").value=utcStr(new Date(t+dir*span));
+  showRange();
+}
+function goLive(){
+  MODE="live";
+  if(POLL){clearInterval(POLL);POLL=null;}
+  document.getElementById("go").disabled=false;
+  rstat("");
+  tick();
+}
 
 function nice(m){if(!m)return 1;const p=Math.pow(10,Math.floor(Math.log10(m)));return Math.ceil(m/p)*p;}
 function clear(svg){while(svg.firstChild)svg.removeChild(svg.firstChild);}
@@ -159,6 +267,41 @@ function axisX(svg,pts,yb){
     t.textContent=p[0]; svg.appendChild(t);
   });
 }
+// Выделение диапазона мышью: как в графане — потянул по графику, получил период.
+function selectable(svg,pts,MT,PH){
+  let x0=null, rect=null;
+  const toX=ev=>{const r=svg.getBoundingClientRect();return (ev.clientX-r.left)/r.width*W;};
+  const toI=x=>Math.max(0,Math.min(pts.length-1,
+    pts.length<2?0:Math.round((x-ML)/((W-ML-MR)/(pts.length-1)))));
+  const layer=el("rect",{x:ML,y:MT,width:W-ML-MR,height:PH,fill:"transparent",
+                         style:"cursor:crosshair"});
+  layer.addEventListener("mousedown",ev=>{
+    x0=toX(ev);
+    rect=el("rect",{x:x0,y:MT,width:0,height:PH,class:"selrect"});
+    svg.appendChild(rect); ev.preventDefault();
+  });
+  layer.addEventListener("mousemove",ev=>{
+    if(x0===null)return;
+    const x=toX(ev);
+    rect.setAttribute("x",Math.min(x0,x));
+    rect.setAttribute("width",Math.abs(x-x0));
+  });
+  const finish=ev=>{
+    if(x0===null)return;
+    const x=toX(ev), a=toI(Math.min(x0,x)), b=toI(Math.max(x0,x));
+    if(rect){svg.removeChild(rect);rect=null;}
+    const wide=Math.abs(x-x0)>6;
+    x0=null;
+    if(!wide || b-a<1) return;                 // клик, а не выделение
+    document.getElementById("from").value=pts[a][3];
+    document.getElementById("to").value=pts[b][3];
+    showRange();
+  };
+  layer.addEventListener("mouseup",finish);
+  layer.addEventListener("mouseleave",()=>{ if(rect){svg.removeChild(rect);rect=null;} x0=null; });
+  svg.appendChild(layer);
+}
+
 function crosshair(svg,box,tip,pts,MT,PH,render){
   const line=el("line",{x1:0,x2:0,y1:MT,y2:MT+PH,stroke:"var(--ink-3)","stroke-width":1,
     "stroke-dasharray":"3 3",opacity:0});
@@ -182,7 +325,7 @@ function crosshair(svg,box,tip,pts,MT,PH,render){
 function drawBandwidth(series,ceiling){
   const svg=document.getElementById("c1"),box=document.getElementById("cb1"),tip=document.getElementById("t1");
   clear(svg);
-  const pts=series.map(s=>[s[0].slice(11),s[1],s[2]]);
+  const pts=series.map(s=>[s[0].slice(11),s[1],s[2],s[0]]);  // [метка,чт,зп,полная минута]
   if(!pts.length)return;
   const H=260,MT=12,MB=26,PH=H-MT-MB;
   const MAX=nice(Math.max(ceiling||0,...pts.map(p=>p[1]+p[2]))*1.08);
@@ -204,11 +347,12 @@ function drawBandwidth(series,ceiling){
       "stroke-width":2,"stroke-dasharray":"5 4"}));
     const t=el("text",{x:W-MR,y:y(ceiling)-6,"text-anchor":"end",fill:"var(--alarm)","font-size":10.5,
       "font-weight":600,"font-family":"ui-monospace,Menlo,monospace"});
-    t.textContent="полка "+nf(Math.round(ceiling))+" MiB/s"; svg.appendChild(t);}
+    t.textContent="квота "+Math.round(LIMIT)+" MiB/с"+(PERDIR?" на направление":""); svg.appendChild(t);}
   svg.appendChild(el("line",{x1:ML,x2:W-MR,y1:MT+PH,y2:MT+PH,stroke:"var(--rule-strong)","stroke-width":1}));
   axisX(svg,pts,MT+PH);
   crosshair(svg,box,tip,pts,MT,PH,p=>
     `<b>${p[0]} UTC</b><br>чтение ${Math.round(p[1])} MiB/s<br>запись ${Math.round(p[2])} MiB/s<br>всего <b>${Math.round(p[1]+p[2])}</b>`);
+  selectable(svg,pts,MT,PH);
 }
 
 function drawLatency(series){
@@ -245,11 +389,12 @@ function drawLatency(series){
     : `<b>${p[0]} UTC</b><br>p50 ${nf(p[1])} мс<br>p90 ${nf(p[2])} мс`);
 }
 
+const gb=m=>(m*8*1048576/1e9).toFixed(2);
 function kpis(w,ceiling){
   const rows=[
-    ["", w.gbit.toFixed(1), " Гбит/с", "Суммарно"],
-    ["rd", Math.round(w.read_mibs), " MiB/s", "Чтение · полка "+Math.round(ceiling)+" MiB/s"],
-    ["wr", Math.round(w.write_mibs), " MiB/s", "Запись"],
+    ["", w.gbit.toFixed(2), " Гбит/с", "Суммарно · квота "+Math.round(LIMIT)+" MiB/с"+(PERDIR?" на направление":" общая")],
+    ["rd", gb(w.read_mibs), " Гбит/с", "Чтение · "+Math.round(w.read_mibs)+" MiB/s"],
+    ["wr", gb(w.write_mibs), " Гбит/с", "Запись · "+Math.round(w.write_mibs)+" MiB/s"],
     ["", nf(Math.round(w.rps)), "", "Запросов в секунду"],
     ["", nf(w.p50), " мс", "Задержка p50 · p90 "+nf(w.p90)],
     ["", w.pct404.toFixed(1), " %", "Впустую (404)"],
@@ -315,13 +460,16 @@ async function tick(){
     `циклов ${st.cycles} · файлов в последнем ${st.last_files} · цикл ${st.last_seconds} с · минут в окне ${st.minutes_held}`
     + (st.error?` · ОШИБКА: ${st.error}`:"");
   if(!d){ banner(null); return; }
-  LAST=d;
-  banner(d.alert);
-  kpis(d.window,d.ceiling);
-  drawBandwidth(d.series,d.ceiling);
-  drawLatency(d.latency_series);
-  tables(d);
+  if(MODE!=="live") return;      // показан снимок периода — не затирать
+  render(d);
 }
+document.getElementById("go").addEventListener("click",showRange);
+document.getElementById("live").addEventListener("click",goLive);
+document.querySelectorAll("button.q").forEach(b=>b.addEventListener("click",()=>{
+  setQuick(+b.dataset.min); showRange();}));
+document.getElementById("prev").addEventListener("click",()=>shift(-1));
+document.getElementById("next").addEventListener("click",()=>shift(1));
+setQuick(60);
 tick(); setInterval(tick,20000);
 window.addEventListener("resize",()=>{if(LAST){drawBandwidth(LAST.series,LAST.ceiling);drawLatency(LAST.latency_series);}});
 </script></body></html>
