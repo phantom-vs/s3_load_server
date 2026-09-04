@@ -333,20 +333,21 @@ function drawBandwidth(series,ceiling){
   const pts=series.map(s=>[s[0].slice(11),s[1],s[2],s[0]]);  // [метка,чт,зп,полная минута]
   if(!pts.length)return;
   const H=260,MT=12,MB=26,PH=H-MT-MB;
-  const MAX=nice(Math.max(ceiling||0,...pts.map(p=>p[1]+p[2]))*1.08);
+  // линии не складываются, поэтому шкала по максимуму отдельного ряда
+  const MAX=nice(Math.max(ceiling||0,...pts.map(p=>Math.max(p[1],p[2])))*1.08);
   const y=v=>MT+PH-v/MAX*PH;
   for(let k=0;k<=4;k++){const v=MAX*k/4;
     svg.appendChild(el("line",{x1:ML,x2:W-MR,y1:y(v),y2:y(v),stroke:"var(--rule)","stroke-width":1}));
     const t=el("text",{x:ML-8,y:y(v)+4,"text-anchor":"end",fill:"var(--ink-3)","font-size":10.5,
       "font-family":"ui-monospace,Menlo,monospace"});
     t.textContent=nf(Math.round(v)); svg.appendChild(t);}
-  const stack=(top,bot)=>{
-    let d=`M${xs(0,pts.length)},${y(top(pts[0]))}`;
-    pts.forEach((p,i)=>{if(i)d+=` L${xs(i,pts.length)},${y(top(p))}`;});
-    for(let i=pts.length-1;i>=0;i--)d+=` L${xs(i,pts.length)},${y(bot(pts[i]))}`;
-    return d+" Z";};
-  svg.appendChild(el("path",{d:stack(p=>p[1]+p[2],p=>p[1]),fill:"var(--write)"}));
-  svg.appendChild(el("path",{d:stack(p=>p[1],()=>0),fill:"var(--read)"}));
+  const line=(idx,color)=>{
+    let d="";
+    pts.forEach((p,i)=>{ d+=(i?" L":"M")+xs(i,pts.length)+","+y(p[idx]); });
+    svg.appendChild(el("path",{d:d,fill:"none",stroke:color,"stroke-width":2,
+      "stroke-linejoin":"round","stroke-linecap":"round"}));};
+  line(2,"var(--write)");
+  line(1,"var(--read)");
   if(ceiling>0){
     svg.appendChild(el("line",{x1:ML,x2:W-MR,y1:y(ceiling),y2:y(ceiling),stroke:"var(--alarm)",
       "stroke-width":2,"stroke-dasharray":"5 4"}));
