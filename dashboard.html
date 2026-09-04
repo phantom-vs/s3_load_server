@@ -1,0 +1,327 @@
+<!doctype html>
+<html lang="ru"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Нагрузка d-gigachat-vision-1</title>
+<style>
+:root{color-scheme:light;
+ --ground:#eef1f5;--surface:#fbfbfa;--surface-2:#f4f6f9;
+ --ink:#0f1319;--ink-2:#525b6b;--ink-3:#868f9f;--rule:#dde2e9;--rule-strong:#c3cad4;
+ --read:#2a78d6;--write:#eb6834;--alarm:#d03b3b;--good:#0ca30c;--warn:#b07600;
+ --alarm-tint:rgba(208,59,59,.10);--good-tint:rgba(12,163,12,.10);--warn-tint:rgba(176,118,0,.12)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){color-scheme:dark;
+ --ground:#0d0f12;--surface:#17191c;--surface-2:#1e2126;
+ --ink:#f0f2f5;--ink-2:#a6aebc;--ink-3:#727a89;--rule:#272b31;--rule-strong:#3a3f47;
+ --read:#3987e5;--write:#d95926;--alarm:#e06060;--good:#3cbe3c;--warn:#e0a53c;
+ --alarm-tint:rgba(224,96,96,.16);--good-tint:rgba(60,190,60,.14);--warn-tint:rgba(224,165,60,.16)}}
+:root[data-theme="dark"]{color-scheme:dark;
+ --ground:#0d0f12;--surface:#17191c;--surface-2:#1e2126;
+ --ink:#f0f2f5;--ink-2:#a6aebc;--ink-3:#727a89;--rule:#272b31;--rule-strong:#3a3f47;
+ --read:#3987e5;--write:#d95926;--alarm:#e06060;--good:#3cbe3c;--warn:#e0a53c;
+ --alarm-tint:rgba(224,96,96,.16);--good-tint:rgba(60,190,60,.14);--warn-tint:rgba(224,165,60,.16)}
+*{box-sizing:border-box}
+body{margin:0;background:var(--ground);color:var(--ink);font-size:15px;line-height:1.5;
+ font-family:ui-sans-serif,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+ -webkit-font-smoothing:antialiased}
+.wrap{max-width:1180px;margin:0 auto;padding:26px 20px 56px;display:flex;flex-direction:column;gap:18px}
+h1{font-size:25px;font-weight:700;margin:0;letter-spacing:-.015em}
+h2{font-size:16px;font-weight:600;margin:0;letter-spacing:-.01em}
+.mono{font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace;font-variant-numeric:tabular-nums}
+.head{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;flex-wrap:wrap;
+ border-bottom:2px solid var(--ink);padding-bottom:12px}
+.head .meta{font-size:12.5px;color:var(--ink-2);font-family:ui-monospace,Menlo,monospace;text-align:right}
+.dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;background:var(--good)}
+.dot.stale{background:var(--warn)}
+
+.banner{border-radius:4px;padding:13px 16px;display:flex;gap:12px;align-items:flex-start;border:1px solid}
+.banner .t{font-weight:600}
+.banner .s{font-size:13.5px;color:var(--ink-2)}
+.banner.ok{background:var(--good-tint);border-color:var(--good)}
+.banner.warning{background:var(--warn-tint);border-color:var(--warn)}
+.banner.critical{background:var(--alarm-tint);border-color:var(--alarm)}
+.banner .icon{font-weight:700;font-family:ui-monospace,Menlo,monospace}
+.banner.ok .icon{color:var(--good)}.banner.warning .icon{color:var(--warn)}.banner.critical .icon{color:var(--alarm)}
+
+.kpis{display:grid;grid-template-columns:repeat(6,1fr);gap:1px;background:var(--rule);
+ border:1px solid var(--rule);border-radius:4px;overflow:hidden}
+.kpi{background:var(--surface);padding:12px 14px;display:flex;flex-direction:column;gap:2px}
+.kpi .v{font-size:24px;font-weight:700;line-height:1.1;font-variant-numeric:tabular-nums;letter-spacing:-.02em}
+.kpi .u{font-size:12px;color:var(--ink-3);font-weight:500}
+.kpi .k{font-size:11.5px;color:var(--ink-2)}
+.kpi.rd .v{color:var(--read)}.kpi.wr .v{color:var(--write)}
+
+.panel{background:var(--surface);border:1px solid var(--rule);border-radius:4px;padding:16px 18px;
+ display:flex;flex-direction:column;gap:11px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.legend{display:flex;gap:14px;flex-wrap:wrap;align-items:center;font-size:12px;color:var(--ink-2)}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:5px;vertical-align:-1px}
+.legend .dash{width:15px;height:0;border-top:2px dashed var(--alarm);border-radius:0}
+.chartbox{position:relative}
+svg{display:block;max-width:100%;height:auto}
+.tip{position:absolute;pointer-events:none;opacity:0;transition:opacity .1s;background:var(--ink);
+ color:var(--ground);border-radius:3px;padding:7px 9px;font-family:ui-monospace,Menlo,monospace;
+ font-size:11.5px;line-height:1.45;white-space:nowrap;z-index:5;font-variant-numeric:tabular-nums}
+
+table{border-collapse:collapse;width:100%;font-size:12.5px}
+th,td{text-align:left;padding:6px 10px 6px 0;border-bottom:1px solid var(--rule);vertical-align:baseline}
+th{font-family:ui-monospace,Menlo,monospace;font-size:10px;letter-spacing:.09em;text-transform:uppercase;
+ color:var(--ink-3);font-weight:500}
+td.n,th.n{text-align:right;font-family:ui-monospace,Menlo,monospace;font-variant-numeric:tabular-nums;padding-right:0}
+td.p{font-family:ui-monospace,Menlo,monospace;font-size:11.5px;word-break:break-all}
+tr:last-child td{border-bottom:none}
+.net{font-size:10.5px;color:var(--ink-3);display:block}
+.bar{display:block;height:4px;border-radius:0 2px 2px 0;margin-top:4px}
+.warn{color:var(--alarm);font-weight:600}
+.empty{color:var(--ink-3);font-size:13px}
+.foot{font-size:11.5px;color:var(--ink-3);border-top:1px solid var(--rule);padding-top:12px;
+ font-family:ui-monospace,Menlo,monospace}
+@media (max-width:1000px){.kpis{grid-template-columns:repeat(3,1fr)}.grid2{grid-template-columns:1fr}}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style></head><body>
+<div class="wrap">
+  <div class="head">
+    <div>
+      <h1>Нагрузка d-gigachat-vision-1</h1>
+      <div style="font-size:12.5px;color:var(--ink-2)">по access-логам, время UTC</div>
+    </div>
+    <div class="meta" id="meta">подключение…</div>
+  </div>
+
+  <div class="banner ok" id="banner">
+    <span class="icon" id="bicon">…</span>
+    <div><div class="t" id="btitle">Ожидание первых данных</div>
+         <div class="s" id="btext">Сборщик поднимает историю, это занимает несколько минут.</div></div>
+  </div>
+
+  <div class="kpis" id="kpis"></div>
+
+  <div class="panel">
+    <h2>Полоса по минутам</h2>
+    <div class="legend">
+      <span><i style="background:var(--read)"></i>Чтение</span>
+      <span><i style="background:var(--write)"></i>Запись</span>
+      <span><i class="dash"></i>Полка чтения</span>
+    </div>
+    <div class="chartbox" id="cb1"><svg id="c1" viewBox="0 0 1100 260"></svg><div class="tip" id="t1"></div></div>
+  </div>
+
+  <div class="panel">
+    <h2>Задержка чтения по минутам</h2>
+    <div class="legend">
+      <span><i style="background:var(--read)"></i>p50</span>
+      <span><i style="background:var(--ink-3)"></i>p90</span>
+      <span style="color:var(--alarm)">порог тревоги 200 мс</span>
+    </div>
+    <div class="chartbox" id="cb2"><svg id="c2" viewBox="0 0 1100 180"></svg><div class="tip" id="t2"></div></div>
+  </div>
+
+  <div class="grid2">
+    <div class="panel"><h2>Откуда и что читают</h2>
+      <table><thead><tr><th>Источник → назначение</th><th class="n">MiB/s</th><th class="n">rps</th></tr></thead>
+      <tbody id="rd"></tbody></table></div>
+    <div class="panel"><h2>Откуда и куда пишут</h2>
+      <table><thead><tr><th>Источник → назначение</th><th class="n">MiB/s</th><th class="n">PUT/s</th></tr></thead>
+      <tbody id="wr"></tbody></table></div>
+  </div>
+
+  <div class="grid2">
+    <div class="panel"><h2>Подсети</h2>
+      <table><thead><tr><th>Подсеть</th><th class="n">Узлов</th><th class="n">rps</th><th class="n">MiB/s</th></tr></thead>
+      <tbody id="nets"></tbody></table></div>
+    <div class="panel"><h2>Узлы с наибольшей полосой</h2>
+      <table><thead><tr><th>Узел</th><th>Направление</th><th class="n">MiB/s</th></tr></thead>
+      <tbody id="tops"></tbody></table></div>
+  </div>
+
+  <div class="panel" id="susp-panel" hidden><h2>Запросы впустую (404)</h2><div id="susp"></div></div>
+
+  <div class="foot" id="foot"></div>
+</div>
+
+<script>
+const NS="http://www.w3.org/2000/svg";
+const el=(t,a)=>{const e=document.createElementNS(NS,t);for(const k in a)e.setAttribute(k,a[k]);return e;};
+const nf=n=>Number(n).toLocaleString("ru-RU");
+const W=1100, ML=58, MR=14;
+let LAST=null;
+
+function nice(m){if(!m)return 1;const p=Math.pow(10,Math.floor(Math.log10(m)));return Math.ceil(m/p)*p;}
+function clear(svg){while(svg.firstChild)svg.removeChild(svg.firstChild);}
+function xs(i,n){return n<2?ML:ML+i*(W-ML-MR)/(n-1);}
+
+function axisX(svg,pts,yb){
+  const step=Math.max(1,Math.round(pts.length/12));
+  pts.forEach((p,i)=>{
+    if(i%step)return;
+    svg.appendChild(el("line",{x1:xs(i,pts.length),x2:xs(i,pts.length),y1:yb,y2:yb+4,
+      stroke:"var(--rule-strong)","stroke-width":1}));
+    const t=el("text",{x:xs(i,pts.length),y:yb+16,"text-anchor":"middle",fill:"var(--ink-3)",
+      "font-size":10,"font-family":"ui-monospace,Menlo,monospace"});
+    t.textContent=p[0]; svg.appendChild(t);
+  });
+}
+function crosshair(svg,box,tip,pts,MT,PH,render){
+  const line=el("line",{x1:0,x2:0,y1:MT,y2:MT+PH,stroke:"var(--ink-3)","stroke-width":1,
+    "stroke-dasharray":"3 3",opacity:0});
+  svg.appendChild(line);
+  const hit=el("rect",{x:ML,y:MT,width:W-ML-MR,height:PH,fill:"transparent"});
+  hit.addEventListener("mousemove",ev=>{
+    const r=svg.getBoundingClientRect(), px=(ev.clientX-r.left)/r.width*W;
+    let i=pts.length<2?0:Math.round((px-ML)/((W-ML-MR)/(pts.length-1)));
+    i=Math.max(0,Math.min(pts.length-1,i));
+    line.setAttribute("x1",xs(i,pts.length));line.setAttribute("x2",xs(i,pts.length));
+    line.setAttribute("opacity",1);
+    tip.innerHTML=render(pts[i]); tip.style.opacity=1;
+    const lp=xs(i,pts.length)/W*box.clientWidth;
+    tip.style.left=Math.min(Math.max(lp-70,4),Math.max(4,box.clientWidth-170))+"px";
+    tip.style.top="4px";
+  });
+  hit.addEventListener("mouseleave",()=>{tip.style.opacity=0;line.setAttribute("opacity",0);});
+  svg.appendChild(hit);
+}
+
+function drawBandwidth(series,ceiling){
+  const svg=document.getElementById("c1"),box=document.getElementById("cb1"),tip=document.getElementById("t1");
+  clear(svg);
+  const pts=series.map(s=>[s[0].slice(11),s[1],s[2]]);
+  if(!pts.length)return;
+  const H=260,MT=12,MB=26,PH=H-MT-MB;
+  const MAX=nice(Math.max(ceiling||0,...pts.map(p=>p[1]+p[2]))*1.08);
+  const y=v=>MT+PH-v/MAX*PH;
+  for(let k=0;k<=4;k++){const v=MAX*k/4;
+    svg.appendChild(el("line",{x1:ML,x2:W-MR,y1:y(v),y2:y(v),stroke:"var(--rule)","stroke-width":1}));
+    const t=el("text",{x:ML-8,y:y(v)+4,"text-anchor":"end",fill:"var(--ink-3)","font-size":10.5,
+      "font-family":"ui-monospace,Menlo,monospace"});
+    t.textContent=nf(Math.round(v)); svg.appendChild(t);}
+  const stack=(top,bot)=>{
+    let d=`M${xs(0,pts.length)},${y(top(pts[0]))}`;
+    pts.forEach((p,i)=>{if(i)d+=` L${xs(i,pts.length)},${y(top(p))}`;});
+    for(let i=pts.length-1;i>=0;i--)d+=` L${xs(i,pts.length)},${y(bot(pts[i]))}`;
+    return d+" Z";};
+  svg.appendChild(el("path",{d:stack(p=>p[1]+p[2],p=>p[1]),fill:"var(--write)"}));
+  svg.appendChild(el("path",{d:stack(p=>p[1],()=>0),fill:"var(--read)"}));
+  if(ceiling>0){
+    svg.appendChild(el("line",{x1:ML,x2:W-MR,y1:y(ceiling),y2:y(ceiling),stroke:"var(--alarm)",
+      "stroke-width":2,"stroke-dasharray":"5 4"}));
+    const t=el("text",{x:W-MR,y:y(ceiling)-6,"text-anchor":"end",fill:"var(--alarm)","font-size":10.5,
+      "font-weight":600,"font-family":"ui-monospace,Menlo,monospace"});
+    t.textContent="полка "+nf(Math.round(ceiling))+" MiB/s"; svg.appendChild(t);}
+  svg.appendChild(el("line",{x1:ML,x2:W-MR,y1:MT+PH,y2:MT+PH,stroke:"var(--rule-strong)","stroke-width":1}));
+  axisX(svg,pts,MT+PH);
+  crosshair(svg,box,tip,pts,MT,PH,p=>
+    `<b>${p[0]} UTC</b><br>чтение ${Math.round(p[1])} MiB/s<br>запись ${Math.round(p[2])} MiB/s<br>всего <b>${Math.round(p[1]+p[2])}</b>`);
+}
+
+function drawLatency(series){
+  const svg=document.getElementById("c2"),box=document.getElementById("cb2"),tip=document.getElementById("t2");
+  clear(svg);
+  const pts=series;
+  if(!pts.length)return;
+  const H=180,MT=12,MB=26,PH=H-MT-MB;
+  const vals=pts.map(p=>p[2]).filter(v=>v!==null&&v!==undefined);
+  const MAX=nice(Math.max(250,...(vals.length?vals:[250]))*1.08);
+  const y=v=>MT+PH-Math.min(v,MAX)/MAX*PH;
+  for(let k=0;k<=4;k++){const v=MAX*k/4;
+    svg.appendChild(el("line",{x1:ML,x2:W-MR,y1:y(v),y2:y(v),stroke:"var(--rule)","stroke-width":1}));
+    const t=el("text",{x:ML-8,y:y(v)+4,"text-anchor":"end",fill:"var(--ink-3)","font-size":10.5,
+      "font-family":"ui-monospace,Menlo,monospace"});
+    t.textContent=nf(Math.round(v)); svg.appendChild(t);}
+  // пропуски (минуты без чтений) рвут линию, а не опускают её в ноль
+  const line=(idx,color,wdt,op)=>{
+    let d="",pen=false;
+    pts.forEach((p,i)=>{
+      const v=p[idx];
+      if(v===null||v===undefined){pen=false;return;}
+      d+=(pen?" L":" M")+xs(i,pts.length)+","+y(v); pen=true;});
+    if(d) svg.appendChild(el("path",{d:d.trim(),fill:"none",stroke:color,"stroke-width":wdt,
+      opacity:op,"stroke-linejoin":"round","stroke-linecap":"round"}));};
+  line(2,"var(--ink-3)",1.5,.8);
+  line(1,"var(--read)",2,1);
+  svg.appendChild(el("line",{x1:ML,x2:W-MR,y1:y(200),y2:y(200),stroke:"var(--alarm)",
+    "stroke-width":1.5,"stroke-dasharray":"4 4"}));
+  svg.appendChild(el("line",{x1:ML,x2:W-MR,y1:MT+PH,y2:MT+PH,stroke:"var(--rule-strong)","stroke-width":1}));
+  axisX(svg,pts,MT+PH);
+  crosshair(svg,box,tip,pts,MT,PH,p=>p[1]===null||p[1]===undefined
+    ? `<b>${p[0]} UTC</b><br>чтений не было`
+    : `<b>${p[0]} UTC</b><br>p50 ${nf(p[1])} мс<br>p90 ${nf(p[2])} мс`);
+}
+
+function kpis(w,ceiling){
+  const rows=[
+    ["", w.gbit.toFixed(1), " Гбит/с", "Суммарно"],
+    ["rd", Math.round(w.read_mibs), " MiB/s", "Чтение · полка "+Math.round(ceiling)+" MiB/s"],
+    ["wr", Math.round(w.write_mibs), " MiB/s", "Запись"],
+    ["", nf(Math.round(w.rps)), "", "Запросов в секунду"],
+    ["", nf(w.p50), " мс", "Задержка p50 · p90 "+nf(w.p90)],
+    ["", w.pct404.toFixed(1), " %", "Впустую (404)"],
+  ];
+  document.getElementById("kpis").innerHTML=rows.map(r=>
+    `<div class="kpi ${r[0]}"><span class="v">${r[1]}<span class="u">${r[2]}</span></span>
+     <span class="k">${r[3]}</span></div>`).join("");
+}
+
+function esc(s){return String(s).replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));}
+
+function tables(d){
+  // отбрасываем строки без заметной нагрузки, иначе в простое таблицу
+  // забивают служебные префиксы airflow с нулевым трафиком
+  const sig=r=>r.mibs>=0.05||r.rps>=1;
+  d={...d, rd:d.rd.filter(sig), wr:d.wr.filter(r=>r.mibs>=0.05||r.ops>=0.1)};
+  const rmax=Math.max(1,...d.rd.map(r=>r.mibs)), wmax=Math.max(1,...d.wr.map(r=>r.mibs));
+  document.getElementById("rd").innerHTML = d.rd.length ? d.rd.slice(0,10).map(r=>
+    `<tr><td class="p"><span class="net">${esc(r.net)}</span>${esc(r.prefix)}
+     ${r.pct404>=5?`<span class="warn"> · ${Math.round(r.pct404)}% 404</span>`:""}
+     <span class="bar" style="background:var(--read);width:${(r.mibs/rmax*100).toFixed(1)}%"></span></td>
+     <td class="n">${r.mibs.toFixed(0)}</td><td class="n">${nf(Math.round(r.rps))}</td></tr>`).join("")
+    : `<tr><td colspan="3" class="empty">заметной нагрузки на чтение нет</td></tr>`;
+  document.getElementById("wr").innerHTML = d.wr.length ? d.wr.slice(0,8).map(r=>
+    `<tr><td class="p"><span class="net">${esc(r.net)}</span>${esc(r.prefix)}
+     <span class="bar" style="background:var(--write);width:${(r.mibs/wmax*100).toFixed(1)}%"></span></td>
+     <td class="n">${r.mibs.toFixed(0)}</td><td class="n">${r.ops.toFixed(1)}</td></tr>`).join("")
+    : `<tr><td colspan="3" class="empty">записи в окне нет</td></tr>`;
+  document.getElementById("nets").innerHTML=d.rd_nets.slice(0,7).map(r=>
+    `<tr><td class="p">${esc(r.net)}</td><td class="n">${nf(r.nodes)}</td>
+     <td class="n">${nf(Math.round(r.rps))}</td><td class="n">${r.mibs.toFixed(0)}</td></tr>`).join("");
+  document.getElementById("tops").innerHTML=d.tops_rows.map(r=>
+    `<tr><td class="p">${esc(r.ip)}</td><td>${esc(r.dir)}</td><td class="n">${r.mibs.toFixed(0)}</td></tr>`).join("");
+  const sp=document.getElementById("susp-panel");
+  if(d.susp && d.susp.length){
+    sp.hidden=false;
+    document.getElementById("susp").innerHTML=d.susp.map(s=>
+      `<div style="margin-bottom:10px"><b>${esc(s.prefix)}</b> — ${s.share.toFixed(0)}% из
+       ${nf(s.total)} запросов, ${s.rps.toFixed(0)} rps впустую
+       ${s.shapes && s.shapes.length?`<div class="p" style="color:var(--ink-2);margin-top:3px">${esc(s.shapes[0][0])}</div>`:""}</div>`).join("");
+  } else sp.hidden=true;
+}
+
+function banner(a){
+  const b=document.getElementById("banner");
+  b.className="banner "+(a?a.level:"ok");
+  document.getElementById("bicon").textContent=
+    a?({ok:"OK",warning:"!",critical:"!!"}[a.level]||"?"):"…";
+  document.getElementById("btitle").textContent=a?a.title:"Ожидание данных";
+  document.getElementById("btext").textContent=a?a.text:"";
+}
+
+async function tick(){
+  let p;
+  try{ p=await (await fetch("/api/state",{cache:"no-store"})).json(); }
+  catch(e){ document.getElementById("meta").textContent="сервер недоступен"; return; }
+  const st=p.status, d=p.state;
+  const age=st.updated?`обновлено ${st.updated} UTC`:"сбор ещё идёт";
+  const stale=st.error||st.phase==="ошибка";
+  document.getElementById("meta").innerHTML=
+    `<span class="dot${stale?" stale":""}"></span>${st.phase} · ${age}`;
+  document.getElementById("foot").textContent=
+    `циклов ${st.cycles} · файлов в последнем ${st.last_files} · цикл ${st.last_seconds} с · минут в окне ${st.minutes_held}`
+    + (st.error?` · ОШИБКА: ${st.error}`:"");
+  if(!d){ banner(null); return; }
+  LAST=d;
+  banner(d.alert);
+  kpis(d.window,d.ceiling);
+  drawBandwidth(d.series,d.ceiling);
+  drawLatency(d.latency_series);
+  tables(d);
+}
+tick(); setInterval(tick,20000);
+window.addEventListener("resize",()=>{if(LAST){drawBandwidth(LAST.series,LAST.ceiling);drawLatency(LAST.latency_series);}});
+</script></body></html>
