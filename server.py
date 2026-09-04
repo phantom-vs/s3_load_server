@@ -16,7 +16,7 @@ import sys
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-from collector import Collector
+from collector import Collector, TMPBASE, sweep_tmp
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 PAGE = os.path.join(HERE, "dashboard.html")
@@ -91,19 +91,25 @@ def main():
     ap.add_argument("--workers", type=int, default=8)
     ap.add_argument("--limit-mibs", type=float, default=640.0,
                     help="квота полосы бакета в MiB/с (по умолчанию 640 = 5*2^30 бит/с)")
-    ap.add_argument("--max-range", type=int, default=360,
-                    help="максимальная длина разбираемого периода, мин (по умолчанию 360)")
+    ap.add_argument("--max-range", type=int, default=1440,
+                    help="максимальная длина разбираемого периода, мин (по умолчанию 1440 = сутки)")
+    ap.add_argument("--slow-ms", type=int, default=200,
+                    help="порог тревоги по медианной задержке, мс (по умолчанию 200)")
     ap.add_argument("--limit-combined", action="store_true",
                     help="считать квоту общей на чтение+запись; "
                          "по умолчанию она применяется к каждому направлению отдельно")
     args = ap.parse_args()
+
+    stale = sweep_tmp()
+    if stale:
+        print("убрано остатков прошлого запуска: %d" % stale)
 
     col = Collector(window_min=args.window, interval=args.interval,
                     workers=args.workers, bootstrap_min=args.bootstrap,
                     report_window=args.report_window,
                     limit_mibs=args.limit_mibs,
                     per_direction=not args.limit_combined,
-                    max_range_min=args.max_range)
+                    max_range_min=args.max_range, slow_ms=args.slow_ms)
     Handler.collector = col
 
     thread = threading.Thread(target=col.run_forever, daemon=True)
@@ -115,6 +121,7 @@ def main():
     print("данные:   http://%s:%d/api/state" % (shown, args.port))
     print("период:   http://%s:%d/api/range?from=ГГГГ-ММ-ДД+ЧЧ:ММ&to=..." % (shown, args.port))
     print("сбор идёт в фоне, период %d с, окно %d мин." % (args.interval, args.window))
+    print("логи качаются в %s и удаляются сразу после разбора" % TMPBASE)
     print("первый цикл поднимает %d мин истории — займёт несколько минут."
           % args.bootstrap)
     try:

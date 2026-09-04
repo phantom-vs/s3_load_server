@@ -21,6 +21,13 @@ import logparse
 
 REMOTE = os.environ.get(
     "S3LOAD_REMOTE", "d-gigachat-logs01:d-gigachat-logs01/d-gigachat-vision-1")
+# Куда класть скачанные логи на время разбора. По умолчанию — подкаталог tmp/
+# рядом со скриптами, а не системный /tmp: один час логов под полной нагрузкой
+# это 5-7 ГБ, и на многих машинах /tmp столько не держит.
+# Каталог часа удаляется сразу после разбора; при старте убираются остатки,
+# если прошлый запуск был убит на середине.
+HERE = os.path.dirname(os.path.abspath(__file__))
+TMPBASE = os.environ.get("S3LOAD_TMP") or os.path.join(HERE, "tmp")
 MIB = 1 << 20
 
 
@@ -66,6 +73,32 @@ def _env():
     return env
 
 
+def _mktemp(prefix):
+    os.makedirs(TMPBASE, exist_ok=True)
+    return tempfile.mkdtemp(prefix=prefix, dir=TMPBASE)
+
+
+def sweep_tmp():
+    """Убирает каталоги, оставшиеся от убитого прошлого запуска."""
+    if not os.path.isdir(TMPBASE):
+        return 0
+    removed = 0
+    for name in os.listdir(TMPBASE):
+        if not name.startswith("s3load-"):
+            continue
+        path = os.path.join(TMPBASE, name)
+        try:
+            # rmtree не берёт обычные файлы, а они тут тоже могут остаться
+            if os.path.isdir(path) and not os.path.islink(path):
+                shutil.rmtree(path, ignore_errors=True)
+            else:
+                os.remove(path)
+            removed += 1
+        except OSError:
+            pass
+    return removed
+
+
 def _base_cmd(*args):
     cmd = [RCLONE]
     if CONFIG:
@@ -76,7 +109,8 @@ def _base_cmd(*args):
 class Collector(object):
     def __init__(self, window_min=60, interval=120, workers=8,
                  bootstrap_min=45, report_window=10,
-                 limit_mibs=640.0, per_direction=True, max_range_min=360):
+                 limit_mibs=640.0, per_direction=True, max_range_min=1440,
+                 slow_ms=200):
         self.window_min = window_min          # глубина скользящего окна, мин
         self.interval = interval              # период опроса, с
         self.workers = workers
@@ -91,6 +125,12 @@ class Collector(object):
         self.limit_mibs = limit_mibs
         self.per_direction = per_direction
         self.max_range_min = max_range_min
+        # Порог «медленно», мс. Наблюдения 03-04.09.2026 резко двумодальны:
+        # при свободной полосе поминутная p50 держится в 3-21 мс, при полосе
+        # у квоты — 825 мс. Между ними разрыв в 40 раз, поэтому любой порог
+        # от 50 до 500 мс даёт один и тот же результат; 200 взято примерно
+        # посередине разрыва в логарифмической шкале.
+        self.slow_ms = slow_ms
 
         self.agg = logparse.empty_agg()
         self.seen = set()                     # уже разобранные объекты журнала
@@ -99,7 +139,8 @@ class Collector(object):
         self.status = {"phase": "старт", "updated": None, "cycles": 0,
                        "last_files": 0, "last_seconds": 0.0, "error": None,
                        "minutes_held": 0, "rclone": RCLONE,
-                       "config": CONFIG or "(по умолчанию rclone)"}
+                       "config": CONFIG or "(по умолчанию rclone)",
+                       "tmp": TMPBASE}
         self._stop = threading.Event()
         self.range_job = {"phase": "нет"}
         self._range_lock = threading.Lock()
@@ -218,7 +259,7 @@ class Collector(object):
             used = w["total_mibs"]
             which = "Суммарно"
         saturated = lim > 0 and used >= 0.9 * lim
-        slow = w["p50"] >= 200
+        slow = w["p50"] >= self.slow_ms
         pct = 100 * used / lim if lim else 0
 
         if saturated and slow:
@@ -271,7 +312,8 @@ class Collector(object):
                 return False, "разбор периода уже идёт"
             self.range_job = {"from": frm, "to": to, "phase": "запуск",
                               "hours_done": 0, "hours_total": 0, "files": 0,
-                              "error": None, "state": None, "span_min": span}
+                              "bytes": 0, "error": None, "state": None,
+                              "span_min": span}
         threading.Thread(target=self._run_range, args=(frm, to, f, t),
                          daemon=True).start()
         return True, "запущено"
@@ -296,10 +338,11 @@ class Collector(object):
                                      env=_env(), timeout=300)
                 names = [n.strip() for n in out.stdout.splitlines() if n.strip()]
                 if names:
-                    tmp = tempfile.mkdtemp(prefix="s3load-range-")
+                    tmp = _mktemp("s3load-range-")
                     try:
                         paths = self._download(names, tmp)
                         job["files"] += len(paths)
+                        job["bytes"] += sum(os.path.getsize(x) for x in paths)
                         n = min(self.workers, len(paths)) if paths else 0
                         if n > 1:
                             with Pool(n) as pool:
@@ -346,7 +389,7 @@ class Collector(object):
         self.status["phase"] = "выгрузка (%d файлов)" % len(fresh)
 
         paths = []
-        tmp = tempfile.mkdtemp(prefix="s3load-")
+        tmp = _mktemp("s3load-")
         try:
             if fresh:
                 paths = self._download(fresh, tmp)

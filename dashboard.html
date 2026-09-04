@@ -119,6 +119,8 @@ tr:last-child td{border-bottom:none}
       <button class="q ghost" data-min="60">1 час</button>
       <button class="q ghost" data-min="180">3 часа</button>
       <button class="q ghost" data-min="360">6 часов</button>
+      <button class="q ghost" data-min="720">12 часов</button>
+      <button class="q ghost" data-min="1440">сутки</button>
       <span class="ctl-lbl" style="margin-left:8px">Сдвиг:</span>
       <button id="prev" class="ghost" title="на окно назад">←</button>
       <button id="next" class="ghost" title="на окно вперёд">→</button>
@@ -213,6 +215,8 @@ async function showRange(){
   catch(e){ rstat("сервер недоступен",1); document.getElementById("go").disabled=false; return; }
   if(!r.ok){ rstat(r.message,1); document.getElementById("go").disabled=false; return; }
   MODE="range";
+  const span=(parseUTC(t)-parseUTC(f))/60000;
+  if(span>360) rstat(`период ${Math.round(span/60)} ч — качаю логи, это займёт минуты…`);
   if(POLL) clearInterval(POLL);
   POLL=setInterval(async()=>{
     let j;
@@ -220,14 +224,15 @@ async function showRange(){
     if(j.phase==="готово"){
       clearInterval(POLL); POLL=null;
       document.getElementById("go").disabled=false;
-      rstat(`период ${j.from} — ${j.to} · ${j.files} файлов`);
+      rstat(`период ${j.from} — ${j.to} · ${j.files} файлов · ${((j.bytes||0)/1073741824).toFixed(1)} ГБ`);
       render(j.state);
     } else if(j.phase==="ошибка"){
       clearInterval(POLL); POLL=null;
       document.getElementById("go").disabled=false;
       rstat("ошибка: "+(j.error||""),1); MODE="live";
     } else {
-      rstat(`${j.phase} · ${j.hours_done}/${j.hours_total} ч · ${j.files} файлов`);
+      const gbytes=(j.bytes||0)/1073741824;
+      rstat(`${j.phase} · ${j.hours_done}/${j.hours_total} ч · ${j.files} файлов · ${gbytes.toFixed(1)} ГБ`);
     }
   },2000);
 }
